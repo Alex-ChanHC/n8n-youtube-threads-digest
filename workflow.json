@@ -1,0 +1,475 @@
+{
+  "name": "YouTube + Threads Digest (Showcase)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1f9ffd4e-7af2-4804-8e19-32145b9180db",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add public YouTube channel URLs here: /@handle, /c/name, or /channel/UC... .\nconst channelUrls = [\n  'https://www.youtube.com/c/JeffSu',\n  'https://www.youtube.com/channel/UCsBjURrPoezykLs9EqgamOA'\n];\nreturn channelUrls.map(channelUrl => ({ json: { channelUrl } }));"
+      },
+      "id": "e09b7330-1fe4-4d8b-8be7-ddc44bfb316e",
+      "name": "Channel URL List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "id": "1ddb9629-acd3-473d-bae1-cb97aeb9660a",
+      "name": "Read Threads RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        1584,
+        240
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sevenDaysAgo = new Date();\nsevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);\nreturn $input.all().filter(item => {\n  const dateValue = item.json.publishedAt || item.json.isoDate || item.json.pubDate || item.json.updated || item.json.published;\n  const entryDate = dateValue ? new Date(dateValue) : null;\n  return entryDate && !Number.isNaN(entryDate.getTime()) && entryDate >= sevenDaysAgo;\n});"
+      },
+      "id": "dcc9b331-092a-41d5-bce8-90fcc6c82fc6",
+      "name": "Filter Last 7 Days",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2256,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "items",
+        "options": {}
+      },
+      "id": "9f7544c6-96da-4046-9c3d-bbe3f67b9c9f",
+      "name": "Aggregate Updates",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2480,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Create a concise weekly newsletter from the source items below. Group the summary by source, state the main takeaways as clear bullets, and include the source title and its exact link for each item you reference. Do not invent facts or URLs. If an item is sparse, summarize only what is present.\n\nItems published in the last 7 days:\n{{ $json.items.map(i => [i.source ?? \"Unknown source\", i.publishedAt ?? \"\", i.title ?? \"Untitled\", i.content ?? \"\", i.link ?? \"\"].filter(Boolean).join(\" | \")).join(\"\\n\") }}",
+        "options": {
+          "systemMessage": "You are an accurate newsletter editor. Write a concise, readable weekly digest grouped by source, with key takeaways and source links. Use only facts present in the input; do not invent or infer details."
+        }
+      },
+      "id": "00105ad3-4795-4c58-bfb2-ef3e7d268c74",
+      "name": "Summarize Digest",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2704,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "=models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "c14db9fe-5f30-45fd-9d7e-1ae54abbde33",
+      "name": "Google Gemini Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        2776,
+        376
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.channelUrl }}",
+        "options": {
+          "response": {}
+        }
+      },
+      "id": "7af431bd-5306-4c1b-93d6-8122b905adef",
+      "name": "Fetch YouTube Channel Pages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        688,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nfor (const item of $input.all()) {\n  const pageHtml = String(item.json.pageHtml ?? item.json.data ?? '');\n  const channelId = pageHtml.match(/(?:youtube\\.com\\/channel\\/|feeds\\/videos\\.xml\\?channel_id=)(UC[A-Za-z0-9_-]{22})/i)?.[1];\n  if (!channelId) throw new Error(`Could not resolve a YouTube channel ID from ${item.json.channelUrl ?? 'the fetched channel page'}`);\n  results.push({ json: { channelId, sourceUrl: item.json.channelUrl } });\n}\nreturn results;"
+      },
+      "id": "55af9bc4-12e4-4d94-92be-142029ecb2ac",
+      "name": "Extract Channel IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/channels",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "contentDetails"
+            },
+            {
+              "name": "id",
+              "value": "={{$json.channelId}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "7e88bcd4-6750-4f19-b26f-d8f46cf37ad6",
+      "name": "Get YouTube Channel Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1136,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nfor (const item of $input.all()) {\n  const channel = item.json.items?.[0];\n  const uploadsPlaylistId = channel?.contentDetails?.relatedPlaylists?.uploads;\n  if (!channel || !uploadsPlaylistId) throw new Error(`YouTube Data API did not return an uploads playlist for channel ${item.json.items?.[0]?.id ?? 'unknown'}`);\n  results.push({ json: { uploadsPlaylistId, channelId: channel.id, channelTitle: channel.snippet?.title ?? channel.id } });\n}\nreturn results;"
+      },
+      "id": "0a12aa37-4412-416a-8572-fcb40fc0003b",
+      "name": "Build Uploads Playlist Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/playlistItems",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,contentDetails"
+            },
+            {
+              "name": "playlistId",
+              "value": "={{$json.uploadsPlaylistId}}"
+            },
+            {
+              "name": "maxResults",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d0d8b300-949b-4b9c-acbd-523c3f2f74d0",
+      "name": "Get Recent Uploads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1584,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nfor (const item of $input.all()) {\n  for (const video of item.json.items ?? []) {\n    const snippet = video.snippet ?? {};\n    const videoId = video.contentDetails?.videoId ?? snippet.resourceId?.videoId;\n    if (!videoId) continue;\n    results.push({ json: {\n      source: snippet.videoOwnerChannelTitle ?? snippet.channelTitle ?? 'YouTube',\n      sourceType: 'youtube',\n      title: snippet.title ?? '',\n      link: `https://www.youtube.com/watch?v=${videoId}`,\n      publishedAt: snippet.publishedAt ?? '',\n      content: snippet.description ?? ''\n    } });\n  }\n}\nreturn results;"
+      },
+      "id": "a7dfc8c2-834a-497f-96cf-0675228807b3",
+      "name": "Normalize YouTube Videos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Replace 'zuck' with the Threads username you want to follow.\nreturn [{ json: { url: 'https://rsshub.rssforever.com/threads/zuck', source: 'Threads: @zuck' } }];"
+      },
+      "id": "88216271-432d-4d47-a9a1-2a27df6b7c30",
+      "name": "Threads Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({ json: {\n  source: 'Threads',\n  sourceType: 'threads',\n  title: item.json.title ?? '',\n  link: item.json.link ?? item.json.url ?? '',\n  publishedAt: item.json.isoDate ?? item.json.pubDate ?? item.json.published ?? '',\n  content: item.json.contentSnippet ?? item.json.content ?? item.json.description ?? ''\n} }));"
+      },
+      "id": "b357e589-d395-409b-801f-a8406869f9fe",
+      "name": "Normalize Threads Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "31c7a6ba-8359-45ac-b0b8-d81b0348ab4f",
+      "name": "Combine YouTube and Threads",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2032,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function escapeHtml(value) {\n  return String(value ?? '').replace(/[&<>\\\"]/g, character => ({\n    '&': '&amp;',\n    '<': '&lt;',\n    '>': '&gt;',\n    '\\\"': '&quot;'\n  })[character]);\n}\n\nreturn $input.all().map(item => {\n  let body = escapeHtml(item.json.output ?? '');\n  body = body\n    .replace(/\\*\\*\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)\\*\\*/g, '<p><a href=\"$2\"><strong>$1</strong></a></p>')\n    .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)/g, '<a href=\"$2\">$1</a>')\n    .replace(/^###\\s+(.+)$/gm, '<h3>$1</h3>')\n    .replace(/^##\\s+(.+)$/gm, '<h2>$1</h2>')\n    .replace(/^#\\s+(.+)$/gm, '<h1>$1</h1>')\n    .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')\n    .replace(/^\\s*[-*]\\s+/gm, '&bull; ')\n    .replace(/\\n{2,}/g, '<br><br>')\n    .replace(/\\n/g, '<br>');\n  return { json: { ...item.json, emailHtml: `<div style=\"font-family:Arial,sans-serif;line-height:1.5\">${body}</div>` } };\n});"
+      },
+      "id": "3fe7490e-dd78-4798-8be0-941ebaeb33cb",
+      "name": "Format Newsletter HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3056,
+        144
+      ]
+    }
+  ],
+  "connections": {
+    "Filter Last 7 Days": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Updates": {
+      "main": [
+        [
+          {
+            "node": "Summarize Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarize Digest",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Channel URL List": {
+      "main": [
+        [
+          {
+            "node": "Fetch YouTube Channel Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch YouTube Channel Pages": {
+      "main": [
+        [
+          {
+            "node": "Extract Channel IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Channel IDs": {
+      "main": [
+        [
+          {
+            "node": "Get YouTube Channel Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get YouTube Channel Details": {
+      "main": [
+        [
+          {
+            "node": "Build Uploads Playlist Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Uploads Playlist Request": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Uploads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Uploads": {
+      "main": [
+        [
+          {
+            "node": "Normalize YouTube Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize YouTube Videos": {
+      "main": [
+        [
+          {
+            "node": "Combine YouTube and Threads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Threads Source": {
+      "main": [
+        [
+          {
+            "node": "Read Threads RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Threads RSS": {
+      "main": [
+        [
+          {
+            "node": "Normalize Threads Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Threads Posts": {
+      "main": [
+        [
+          {
+            "node": "Combine YouTube and Threads",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Combine YouTube and Threads": {
+      "main": [
+        [
+          {
+            "node": "Filter Last 7 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Digest": {
+      "main": [
+        [
+          {
+            "node": "Format Newsletter HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Channel URL List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Threads Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
