@@ -15,6 +15,8 @@ flowchart LR
   J --> K
   K --> L[Keep last 7 days] --> M[Aggregate] --> N[Gemini summary] --> O[Format newsletter HTML]
 ```
+<img width="1170" height="248" alt="image" src="https://github.com/user-attachments/assets/7064e048-5d8c-487b-ae95-08f98297bc5d" />
+
 
 1. Paste any public YouTube channel URL (`/@handle`, `/c/name` or `/channel/UC...`). The flow resolves the channel ID and fetches recent uploads with the YouTube Data API v3.
 2. A Threads account is read through an RSSHub feed.
