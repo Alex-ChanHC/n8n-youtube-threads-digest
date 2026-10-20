@@ -8,13 +8,39 @@
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        240,
+        0,
         144
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Add public YouTube channel URLs here: /@handle, /c/name, or /channel/UC... .\nconst channelUrls = [\n  'https://www.youtube.com/c/JeffSu',\n  'https://www.youtube.com/channel/UCsBjURrPoezykLs9EqgamOA'\n];\nreturn channelUrls.map(channelUrl => ({ json: { channelUrl } }));"
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "PASTE_YOUR_GOOGLE_SHEET_URL_HERE"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Sources"
+        },
+        "options": {}
+      },
+      "id": "5c1d8f0e-2b7a-4e63-9a41-6d0f3b8e7a21",
+      "name": "Read Sources Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        144
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sheet columns: Type (youtube | threads), URL. YouTube: /@handle, /c/name, or /channel/UC... URLs.\nconst rows = $input.all().map(i => i.json);\nconst channelUrls = rows\n  .filter(r => String(r.Type ?? '').trim().toLowerCase() === 'youtube')\n  .map(r => String(r.URL ?? '').trim())\n  .filter(u => /^https?:\\/\\/(www\\.|m\\.)?youtube\\.com\\//i.test(u));\nreturn [...new Set(channelUrls)].map(channelUrl => ({ json: { channelUrl } }));"
       },
       "id": "e09b7330-1fe4-4d8b-8be7-ddc44bfb316e",
       "name": "Channel URL List",
@@ -233,7 +259,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Replace 'zuck' with the Threads username you want to follow.\nreturn [{ json: { url: 'https://rsshub.rssforever.com/threads/zuck', source: 'Threads: @zuck' } }];"
+        "jsCode": "// Sheet columns: Type (youtube | threads), URL. For threads, URL may be a profile URL or @username.\nconst usernames = $input.all().map(i => i.json)\n  .filter(r => String(r.Type ?? '').trim().toLowerCase() === 'threads')\n  .map(r => String(r.URL ?? '').trim().replace(/^https?:\\/\\/(www\\.)?threads\\.(net|com)\\//i, '').replace(/^@/, '').split(/[/?#]/)[0])\n  .filter(u => /^[A-Za-z0-9._]+$/.test(u));\nreturn [...new Set(usernames)].map(u => ({ json: { url: `https://rsshub.rssforever.com/threads/${u}`, source: `Threads: @${u}` } }));"
       },
       "id": "88216271-432d-4d47-a9a1-2a27df6b7c30",
       "name": "Threads Source",
@@ -449,6 +475,17 @@
       ]
     },
     "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Sources Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sources Sheet": {
       "main": [
         [
           {
